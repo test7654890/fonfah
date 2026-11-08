@@ -1,0 +1,1261 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ฟ้าฝน</title>
+<meta name="description" content="เรดาร์ฝนสด พยากรณ์โอกาสฝนด้วย AI และแจ้งเตือนก่อนฝนตก">
+<meta name="theme-color" content="#0b77a3">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230b77a3%22/%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23bfe6f4%22%20stroke-width%3D%222.5%22%20opacity%3D%22.6%22%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2234%22%20r%3D%2222%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2234%22%20r%3D%2214%22/%3E%3C/g%3E%3Cpath%20d%3D%22M32%2011L41.88%2027.62A11.5%2011.5%200%201%201%2022.12%2027.62Z%22%20fill%3D%22%23fff%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: phone = one view at a time with a bottom tab bar; desktop = radar map fixed left, readout column right. */
+:root{
+  --bg:#edf2f4; --surface:#ffffff; --surface-2:#f5f8f9; --ink:#0f1e27; --muted:#587080; --line:#d3dee4;
+  --accent:#0b77a3; --accent-ink:#ffffff; --accent-soft:#dcedf4; --warn:#b4650a; --good:#2b7a4f; --danger:#b3361f;
+  --f-display:"Chakra Petch","IBM Plex Sans Thai",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-data:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:14px; --tabh:64px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#081218; --surface:#0f1c23; --surface-2:#13232c; --ink:#e3edf1; --muted:#88a1ad; --line:#1e323c;
+  --accent:#3db6dd; --accent-ink:#04202b; --accent-soft:#11313e; --warn:#efa13b; --good:#5cc489; --danger:#ff7a63;
+  color-scheme:dark}}
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-rows:auto 1fr;height:100%}
+.topbar{display:flex;align-items:center;gap:10px;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));
+  background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:900}
+.logo{display:flex;align-items:center;gap:8px;font:700 1.2rem/1 var(--f-display);letter-spacing:.02em;flex:none}
+.logo svg{width:26px;height:26px}
+.place{display:flex;align-items:center;gap:6px;min-width:0;flex:1;justify-content:center;
+  border:1px solid var(--line);background:var(--surface-2);border-radius:99px;padding:7px 14px;max-width:360px}
+.place span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place svg{flex:none;width:16px;height:16px;color:var(--accent)}
+.iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:7px 10px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.iconbtn:hover{border-color:var(--accent);color:var(--accent)}
+
+.body{min-height:0;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(360px,1fr)}
+.mapcol{position:relative;min-height:0}
+.side{min-width:0;min-height:0;display:flex;flex-direction:column;border-left:1px solid var(--line)}
+.scroll{flex:1;overflow:auto;padding:16px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px))}
+.view{display:flex;flex-direction:column;gap:16px;max-width:620px;margin:0 auto}
+
+.tabs{display:flex;gap:4px;padding:6px;background:var(--surface);border-bottom:1px solid var(--line)}
+.tabs button{flex:1;border:0;background:none;border-radius:10px;padding:8px 6px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px;font-weight:500}
+.tabs button svg{width:20px;height:20px}
+.tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.tabs .t-radar{display:none}
+
+@media (max-width:899px){
+  .body{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+  .mapcol{display:none}
+  body[data-view="radar"] .mapcol{display:block;grid-row:1}
+  body[data-view="radar"] .side{display:none}
+  .side{border-left:0}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:950;border-bottom:0;border-top:1px solid var(--line);
+    padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px))}
+  .tabs button{flex-direction:column;gap:2px;font-size:.72rem;padding:6px 4px}
+  .tabs .t-radar{display:flex}
+  .scroll{padding-bottom:calc(var(--tabh) + 24px + env(safe-area-inset-bottom,0px))}
+  .mapcol{padding-bottom:calc(var(--tabh) + env(safe-area-inset-bottom,0px))}
+  .logo .word{display:none}
+}
+
+/* ---------- map ---------- */
+#map{position:absolute;inset:0;background:var(--bg)}
+.mapcol .floating{position:absolute;z-index:800}
+.player{left:12px;right:12px;bottom:calc(14px);display:flex;gap:10px;align-items:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+@media (max-width:899px){.player{bottom:calc(var(--tabh) + 14px + env(safe-area-inset-bottom,0px))}}
+.player input{flex:1;min-width:0;accent-color:var(--accent)}
+.player .t{font:500 .82rem var(--f-data);font-variant-numeric:tabular-nums;min-width:7.2em;text-align:right}
+.playbtn{width:40px;height:40px;border-radius:10px;border:0;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;flex:none}
+.legend{top:12px;right:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:.72rem}
+.legend .bar{display:flex;height:7px;width:150px;border-radius:2px;overflow:hidden;margin:4px 0 2px}
+.legend .bar span{flex:1}
+.legend .ends{display:flex;justify-content:space-between;color:var(--muted)}
+.recenter{top:12px;left:56px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:.8rem}
+.pin{width:18px;height:18px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 0 0 2px var(--accent),0 2px 8px rgba(0,0,0,.4)}
+.leaflet-container{font-family:var(--f-body)}
+
+/* ---------- cards ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.label{font-size:.78rem;color:var(--muted);letter-spacing:.03em}
+h2{font:600 .98rem var(--f-display);margin:0;letter-spacing:.02em;text-wrap:balance}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.status{font-size:.8rem;color:var(--muted);display:flex;gap:8px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.live{background:var(--good)}
+.dot.err{background:var(--warn)}
+
+.hero{display:grid;gap:12px;position:relative;overflow:hidden}
+.hero .big{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.hero .num{font:700 4.4rem/0.95 var(--f-display);font-variant-numeric:tabular-nums;color:var(--accent);letter-spacing:-.02em}
+.hero .num small{font-size:1.8rem;margin-left:2px}
+.hero .verdict{font:600 1.15rem var(--f-display)}
+.hero .summary{margin:0;font-size:1rem}
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.trio div{border-top:2px solid var(--line);padding-top:6px}
+.trio b{display:block;font:600 1.45rem var(--f-display);font-variant-numeric:tabular-nums}
+.trio span{font-size:.76rem;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:99px;font-size:.74rem;font-weight:600;border:1px solid currentColor;white-space:nowrap}
+.meta{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:.8rem;color:var(--muted)}
+
+/* rain drops backdrop on the hero: intensity follows probability */
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:.55}
+.hero > *:not(canvas){position:relative}
+
+.strip{display:grid;grid-template-columns:repeat(13,minmax(0,1fr));gap:3px;margin-top:10px}
+.strip .c{height:54px;border-radius:5px;background:var(--surface-2);border:1px solid var(--line);position:relative;overflow:hidden}
+.strip .c i{position:absolute;left:0;right:0;bottom:0;background:var(--accent)}
+.ticks{display:grid;grid-template-columns:repeat(13,minmax(0,1fr));gap:3px;font:400 .66rem var(--f-data);color:var(--muted);text-align:center;margin-top:4px}
+.ticks span{white-space:nowrap}
+.ticks span:first-child{text-align:left}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:14px 0 0}
+.facts dt{color:var(--muted);font-size:.74rem}
+.facts dd{margin:0;font-weight:500}
+
+.ai{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:linear-gradient(180deg,var(--accent-soft),var(--surface) 70%)}
+.ai .badge{display:inline-flex;gap:6px;align-items:center;font:600 .78rem var(--f-display);color:var(--accent);letter-spacing:.04em}
+.ai h3{font:600 1.15rem/1.4 var(--f-display);margin:8px 0 6px;text-wrap:balance}
+.ai p{margin:0 0 8px}
+.ai .advice{font-weight:500;border-left:3px solid var(--accent);padding-left:10px}
+.timeline{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.timeline li{display:grid;grid-template-columns:3.6em 1fr;gap:10px;font-size:.9rem}
+.timeline time{font-family:var(--f-data);color:var(--accent);font-variant-numeric:tabular-nums}
+.skeleton{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--line),var(--surface-2),var(--line));background-size:200% 100%;animation:sh 1.4s infinite linear;margin:8px 0}
+@keyframes sh{to{background-position:-200% 0}}
+.linkbtn{border:0;background:none;color:var(--accent);padding:0;font-weight:500}
+
+.chart{overflow-x:auto;margin-top:8px}
+.chart svg{display:block;width:100%;min-width:520px;height:auto}
+.chart text{font-family:var(--f-data);font-size:10px;fill:var(--muted)}
+.note{font-size:.76rem;color:var(--muted);margin:6px 0 0}
+details{font-size:.85rem;color:var(--muted)}
+details summary{cursor:pointer;color:var(--ink);font-weight:500}
+table.src{width:100%;border-collapse:collapse;font-size:.84rem;margin-top:8px}
+table.src td{padding:6px 0;border-bottom:1px solid var(--line)}
+table.src td:last-child{text-align:right;font-family:var(--f-data);white-space:nowrap}
+
+/* ---------- alerts ---------- */
+.switch{position:relative;width:52px;height:30px;flex:none}
+.switch input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.switch span{position:absolute;inset:0;border-radius:99px;background:var(--line);transition:background .2s}
+.switch span::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+.switch input:checked + span{background:var(--accent)}
+.switch input:checked + span::after{transform:translateX(22px)}
+.switch input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:4px;margin-top:8px}
+.seg button{border:0;background:none;border-radius:7px;padding:8px 4px;font-size:.88rem}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--accent);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.setting{display:grid;gap:4px;padding:14px 0;border-top:1px solid var(--line)}
+.setting:first-of-type{border-top:0;padding-top:0}
+.help{font-size:.82rem;color:var(--muted);margin:0}
+.callout{border-radius:10px;padding:10px 12px;font-size:.86rem;background:var(--surface-2);border:1px solid var(--line)}
+.callout.warn{border-color:color-mix(in srgb,var(--warn) 50%,var(--line))}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 14px;font-weight:500}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.5;cursor:default}
+
+/* ---------- search sheet ---------- */
+.sheet{position:fixed;inset:0;z-index:2000;background:rgba(5,15,20,.45);display:flex;align-items:flex-start;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 60px) 16px 16px}
+.sheet .panel{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);display:grid;gap:10px}
+.sheet input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font-size:1rem}
+.list{display:grid;gap:2px;max-height:50vh;overflow:auto}
+.list button{text-align:left;border:0;background:none;padding:10px 10px;border-radius:8px;display:flex;flex-direction:column}
+.list button:hover{background:var(--accent-soft)}
+.list small{color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tabh) + 24px + env(safe-area-inset-bottom,0px));z-index:3000;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.9rem;max-width:calc(100% - 32px)}
+@media (min-width:900px){.toast{bottom:24px}}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.hero canvas{display:none}}
+
+.banner{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 70px);z-index:2500;width:min(440px,calc(100% - 32px));
+  background:var(--accent);color:var(--accent-ink);border-radius:14px;padding:14px 16px;box-shadow:0 14px 40px rgba(0,0,0,.3);display:flex;gap:12px;align-items:flex-start}
+.banner b{display:block;font:600 1.05rem var(--f-display)}
+.banner p{margin:2px 0 0;font-size:.9rem}
+.banner button{margin-left:auto;border:0;background:rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:6px 10px;flex:none}
+.keyrow{display:flex;gap:8px;margin-top:8px}
+.keyrow input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+select{padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);margin-top:8px;width:100%}
+</style>
+</head>
+<body data-view="home">
+<div class="app">
+  <header class="topbar">
+    <div class="logo">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--accent)"/><path d="M16 7c3.6 5 6 8.4 6 11.4A6 6 0 0 1 10 18.4C10 15.4 12.4 12 16 7z" fill="var(--accent-ink)"/></svg>
+      <span class="word">ฟ้าฝน</span>
+    </div>
+    <button class="place" id="placeBtn" type="button" aria-label="เปลี่ยนตำแหน่ง">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      <span id="placeName">กรุงเทพมหานคร</span>
+    </button>
+  </header>
+
+  <div class="body">
+    <section class="mapcol" aria-label="เรดาร์">
+      <div id="map"></div>
+      <div class="floating legend" aria-label="สเกลความแรงฝน">
+        ความแรงฝน
+        <div class="bar" id="legendBar"></div>
+        <div class="ends"><span>ปรอย</span><span>หนักมาก</span></div>
+      </div>
+      <button class="floating recenter" id="recenter" type="button">กลับมาที่ตำแหน่ง</button>
+      <div class="floating player">
+        <button class="playbtn" id="play" type="button" aria-label="เล่นภาพเรดาร์">
+          <svg id="playIcon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6z"/></svg>
+        </button>
+        <input type="range" id="slider" min="0" max="0" value="0" aria-label="เลือกเวลาเรดาร์">
+        <span class="t" id="frameTime">--:--</span>
+      </div>
+    </section>
+
+    <section class="side">
+      <nav class="tabs" role="tablist" aria-label="เมนู">
+        <button role="tab" data-tab="home" aria-selected="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18z"/></svg>พยากรณ์</button>
+        <button role="tab" data-tab="radar" class="t-radar" aria-selected="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/></svg>เรดาร์</button>
+        <button role="tab" data-tab="alerts" aria-selected="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>ตั้งค่า</button>
+      </nav>
+
+      <div class="scroll">
+        <!-- HOME -->
+        <div class="view" id="view-home">
+          <div class="status"><span class="dot" id="dot"></span><span id="statusText">กำลังโหลดข้อมูล…</span></div>
+
+          <article class="card hero" aria-live="polite">
+            <canvas id="rainfx" aria-hidden="true"></canvas>
+            <div class="label">โอกาสฝนตก ใน 1 ชั่วโมงข้างหน้า</div>
+            <div class="big"><span class="num" id="p1">--<small>%</small></span><span class="verdict" id="verdict"></span></div>
+            <p class="summary" id="summary">กำลังวิเคราะห์เรดาร์และโมเดลพยากรณ์…</p>
+            <div class="trio">
+              <div><b id="pNow">--</b><span>ตอนนี้</span></div>
+              <div><b id="p3">--</b><span>ใน 3 ชม.</span></div>
+              <div><b id="p24">--</b><span>ใน 24 ชม.</span></div>
+            </div>
+            <div class="meta" id="meta"></div>
+          </article>
+
+          <article class="card ai" id="aiCard">
+            <div class="row"><span class="badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 6.6L21 11l-6.8 2.4L12 20l-2.2-6.6L3 11l6.8-2.4z"/></svg>
+              ผู้ช่วยวิเคราะห์ · <span id="aiSource">ผู้ช่วยในเครื่อง</span></span>
+              <button class="linkbtn" id="aiRefresh" type="button">วิเคราะห์ใหม่</button></div>
+            <div id="aiBody"></div>
+          </article>
+
+          <article class="card">
+            <h2>2 ชั่วโมงข้างหน้า</h2>
+            <div class="strip" id="strip"></div>
+            <div class="ticks" id="ticks"></div>
+            <dl class="facts">
+              <div><dt>กลุ่มฝนใกล้สุด</dt><dd id="nearest">–</dd></div>
+              <div><dt>ทิศทางที่ฝนเคลื่อนไป</dt><dd id="motion">–</dd></div>
+              <div><dt>คาดว่าจะถึงคุณ</dt><dd id="eta">–</dd></div>
+              <div><dt>ความแรงที่ตำแหน่งนี้</dt><dd id="here">–</dd></div>
+            </dl>
+          </article>
+
+          <article class="card">
+            <h2>รายชั่วโมง</h2>
+            <div class="chart" id="chart"></div>
+            <p class="note">แท่ง = โอกาสฝน (%) · จุดส้ม = ปริมาณฝนเฉลี่ย (มม./ชม.)</p>
+          </article>
+
+          <details class="card">
+            <summary>แหล่งข้อมูลและวิธีคำนวณ</summary>
+            <table class="src"><tbody id="sources"></tbody></table>
+            <p><b>0–2 ชม.:</b> วิเคราะห์ภาพเรดาร์ 3 เฟรมล่าสุด หาเวกเตอร์การเคลื่อนตัวของกลุ่มฝน แล้วย้อนรอยว่าฝนที่จะมาถึงคุณอยู่ตรงไหนตอนนี้ น้ำหนักของเรดาร์ลดลงตามเวลา</p>
+            <p><b>รายชั่วโมง:</b> สัดส่วนสมาชิก ensemble (ECMWF, GEFS, ICON) ที่ให้ฝน ≥ 0.2 มม./ชม. ผสมกับค่าความน่าจะเป็นของ Open-Meteo และโมเดลรายตัวอีก 6 ตัว</p>
+            <p><b>ผู้ช่วยวิเคราะห์:</b> รวมหลักฐานจากเรดาร์ (กลุ่มฝนกำลังเข้าหาหรือไม่) ความไม่เสถียรของบรรยากาศ (CAPE, ความชื้น) เวลาในวัน และความเห็นพ้องของ ensemble แล้วปรับตัวเลขไม่เกิน 20 จุด พร้อมสรุปช่วงเวลาและคำแนะนำ ถ้าใส่คีย์ Claude ไว้ Claude จะวิเคราะห์แทน</p>
+            <p class="note">เรดาร์: RainViewer · พยากรณ์: Open-Meteo · แผนที่: Esri</p>
+          </details>
+        </div>
+
+        <!-- ALERTS -->
+        <div class="view" id="view-alerts" hidden>
+          <article class="card">
+            <div class="setting">
+              <div class="row"><div><h2>เตือนก่อนฝนตก</h2><p class="help" id="alertSub">เตือนเมื่อฝนกำลังมาถึงตำแหน่งที่เลือก ขณะเปิดหน้านี้ไว้</p></div>
+                <label class="switch"><input type="checkbox" id="alertOn" aria-label="เปิดการแจ้งเตือน"><span></span></label></div>
+            </div>
+            <div class="setting">
+              <div class="label">เตือนล่วงหน้า</div>
+              <div class="seg" id="leadSeg">
+                <button type="button" data-v="15">15 นาที</button><button type="button" data-v="30">30 นาที</button><button type="button" data-v="60">1 ชั่วโมง</button>
+              </div>
+            </div>
+            <div class="setting">
+              <div class="label">ความไวในการเตือน</div>
+              <div class="seg" id="sensSeg">
+                <button type="button" data-v="0.6">เฉพาะฝนชัวร์</button><button type="button" data-v="0.4">ปกติ</button><button type="button" data-v="0.25">เตือนไว</button>
+              </div>
+              <p class="help">“เตือนไว” จะเตือนบ่อยขึ้น แต่บางครั้งฝนอาจไม่ตก</p>
+            </div>
+            <div class="setting">
+              <div class="row"><div><div class="label" style="color:var(--ink);font-size:.95rem">งดเตือนตอนกลางคืน</div><p class="help">22:00–06:00</p></div>
+                <label class="switch"><input type="checkbox" id="quietOn" aria-label="งดเตือนตอนกลางคืน"><span></span></label></div>
+            </div>
+            <div class="setting">
+              <div class="row"><div><div class="label" style="color:var(--ink);font-size:.95rem">เสียงเตือน</div><p class="help">เล่นเสียงสั้นๆ เมื่อฝนกำลังมา</p></div>
+                <label class="switch"><input type="checkbox" id="soundOn" aria-label="เสียงเตือน"><span></span></label></div>
+            </div>
+            <div class="setting">
+              <button class="btn" id="testBtn" type="button">ทดสอบการแจ้งเตือน</button>
+            </div>
+          </article>
+          <div class="callout" id="pushMode"></div>
+          <div class="callout warn" id="iosHint" hidden>บน iPhone/iPad หน้าเว็บส่งการแจ้งเตือนของระบบไม่ได้ แอปจะแสดงแถบเตือนพร้อมเสียงบนหน้านี้แทน ให้เปิดหน้านี้ค้างไว้บนจอ</div>
+
+          <article class="card">
+            <h2>วิเคราะห์ด้วย Claude (ไม่บังคับ)</h2>
+            <p class="help" style="margin-top:6px">แอปมีผู้ช่วยวิเคราะห์ในเครื่องที่ใช้ได้ฟรีอยู่แล้ว ถ้ามี API key ของ Claude ใส่ไว้ตรงนี้เพื่อให้ Claude อ่านข้อมูลทั้งหมดแล้วสรุปให้ คีย์จะเก็บไว้ในเบราว์เซอร์นี้เท่านั้น และคิดค่าใช้งานกับบัญชีของคุณ</p>
+            <p class="help" id="keyState" style="color:var(--ink);margin-top:8px"></p>
+            <form class="keyrow" id="keyForm" autocomplete="off"><input id="keyInput" type="password" placeholder="sk-ant-…" aria-label="Claude API key"><button class="btn primary" type="submit">บันทึก</button></form>
+            <select id="modelSel" aria-label="รุ่นของ Claude"><option value="claude-opus-5-5">Claude Opus 5.5 (ฉลาดที่สุด)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (ประหยัดกว่า)</option><option value="claude-haiku-5-5">Claude Haiku 5.5 (เร็วและถูกที่สุด)</option></select>
+            <button class="linkbtn" id="keyRemove" type="button" style="margin-top:10px" hidden>ลบคีย์</button>
+          </article>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="panel" role="dialog" aria-label="เลือกตำแหน่ง">
+    <form id="searchForm" autocomplete="off"><input id="q" type="search" placeholder="ค้นหาเมือง อำเภอ หรือสถานที่" aria-label="ค้นหาตำแหน่ง"></form>
+    <button class="btn primary" id="gpsBtn" type="button">ใช้ตำแหน่งปัจจุบันของฉัน</button>
+    <div class="list" id="results"></div>
+    <p class="help">หรือแตะบนแผนที่เรดาร์เพื่อเลือกจุด</p>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<div class="banner" id="banner" role="alert" hidden><div><b id="bannerTitle"></b><p id="bannerBody"></p></div><button id="bannerClose" type="button">ปิด</button></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+const ICON = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230b77a3%22/%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23bfe6f4%22%20stroke-width%3D%222.5%22%20opacity%3D%22.6%22%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2234%22%20r%3D%2222%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2234%22%20r%3D%2214%22/%3E%3C/g%3E%3Cpath%20d%3D%22M32%2011L41.88%2027.62A11.5%2011.5%200%201%201%2022.12%2027.62Z%22%20fill%3D%22%23fff%22/%3E%3C/svg%3E";
+// Core forecasting logic shared by the browser app and the server (api/check.js).
+// Pure functions + fetch-based loaders. No DOM, no Node-only APIs.
+
+const Z = 7;            // RainViewer free tier max zoom
+const TILE = 256;
+const DS = 3;           // downsample factor → 256×256 analysis grid
+const GRID = (3 * TILE) / DS;
+const WET = 0.2;        // mm/h counted as "rain"
+
+// RainViewer "Universal Blue" scheme (approximate) → dBZ
+const PALETTE = [
+  [10, "#9fdcf0"], [15, "#6cc4ec"], [20, "#3c9ade"], [25, "#2271c8"], [30, "#124fa6"],
+  [35, "#f6e200"], [40, "#ffb400"], [45, "#ff7c00"], [50, "#ff3d00"], [55, "#d00000"],
+  [60, "#c4008e"], [65, "#ff70ff"],
+].map(([d, h]) => [d, parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), h]);
+
+const FC_MODELS = [
+  ["best_match", "Open-Meteo"], ["ecmwf_ifs025", "ECMWF IFS"], ["gfs_seamless", "NOAA GFS"],
+  ["icon_seamless", "DWD ICON"], ["jma_seamless", "JMA"], ["ukmo_seamless", "UK Met Office"],
+  ["cma_grapes_global", "CMA GRAPES"],
+];
+const ENS_MODELS = [
+  { label: "ECMWF ENS", names: ["ecmwf_ifs025", "ecmwf_ifs025_ensemble"] },
+  { label: "NOAA GEFS", names: ["gfs025", "ncep_gefs025", "gfs_seamless"] },
+  { label: "DWD ICON EPS", names: ["icon_seamless", "dwd_icon_seamless_eps", "icon_seamless_eps"] },
+];
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const dbzToRate = (dbz) => Math.pow(Math.pow(10, dbz / 10) / 200, 1 / 1.6); // Marshall–Palmer mm/h
+function rateLabel(r) {
+  if (!r || r <= 0) return "ไม่มีฝน";
+  if (r < 2.5) return "ฝนเล็กน้อย";
+  if (r < 10) return "ฝนปานกลาง";
+  if (r < 50) return "ฝนหนัก";
+  return "ฝนหนักมาก";
+}
+const DIRS = ["เหนือ", "ตะวันออกเฉียงเหนือ", "ตะวันออก", "ตะวันออกเฉียงใต้", "ใต้", "ตะวันตกเฉียงใต้", "ตะวันตก", "ตะวันตกเฉียงเหนือ"];
+const dirName = (deg) => DIRS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+
+async function getJSON(url, ms = 15000) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ac.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+/* ---------------- radar geometry ---------------- */
+function lonLatToPx(lon, lat) {
+  const n = Math.pow(2, Z) * TILE, s = Math.sin((lat * Math.PI) / 180);
+  return [((lon + 180) / 360) * n, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n];
+}
+function mosaicFor(lat, lon) {
+  const [px, py] = lonLatToPx(lon, lat);
+  const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+  const n = Math.pow(2, Z);
+  const tiles = [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const y = ty + dy; if (y < 0 || y >= n) continue;
+    tiles.push({ x: ((tx + dx) % n + n) % n, y, ox: (dx + 1) * TILE, oy: (dy + 1) * TILE });
+  }
+  return {
+    tx, ty, tiles,
+    gx: (px - (tx - 1) * TILE) / DS,
+    gy: (py - (ty - 1) * TILE) / DS,
+    kmPerCell: ((40075 * Math.cos((lat * Math.PI) / 180)) / (n * TILE)) * DS,
+  };
+}
+const radarTileUrl = (host, path, x, y, smooth = 0) => `${host}${path}/256/${Z}/${x}/${y}/2/${smooth}_1.png`;
+async function loadRadarFrames() {
+  const j = await getJSON("https://api.rainviewer.com/public/weather-maps.json");
+  return { host: j.host, frames: (j.radar && j.radar.past) || [] };
+}
+
+const colorCache = new Map();
+function pixelDbz(r, g, b, a) {
+  if (a < 60) return 0;
+  const key = ((r >> 2) << 12) | ((g >> 2) << 6) | (b >> 2);
+  let v = colorCache.get(key);
+  if (v === undefined) {
+    let best = 1e9; v = 0;
+    for (const p of PALETTE) {
+      const d = (r - p[1]) ** 2 + (g - p[2]) ** 2 + (b - p[3]) ** 2;
+      if (d < best) { best = d; v = p[0]; }
+    }
+    colorCache.set(key, v);
+  }
+  return v;
+}
+// rgba: Uint8(Clamped)Array of a (3*TILE)×(3*TILE) mosaic
+function gridFromRGBA(rgba) {
+  const W = 3 * TILE, g = new Float32Array(GRID * GRID);
+  for (let cy = 0; cy < GRID; cy++) for (let cx = 0; cx < GRID; cx++) {
+    let m = 0;
+    for (let yy = 0; yy < DS; yy++) for (let xx = 0; xx < DS; xx++) {
+      const i = ((cy * DS + yy) * W + cx * DS + xx) * 4;
+      const v = pixelDbz(rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]);
+      if (v > m) m = v;
+    }
+    g[cy * GRID + cx] = m;
+  }
+  return g;
+}
+
+function matchShift(A, B, cx, cy, R, maxS) {
+  let rainy = 0;
+  for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) {
+    if (x < 0 || y < 0 || x >= GRID || y >= GRID) continue;
+    if (A[y * GRID + x] >= 15) rainy++;
+  }
+  if (rainy < 40) return null;
+  let best = Infinity, bx = 0, by = 0;
+  const costs = {};
+  for (let dy = -maxS; dy <= maxS; dy++) for (let dx = -maxS; dx <= maxS; dx++) {
+    let c = 0, cnt = 0;
+    for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) {
+      const x2 = x + dx, y2 = y + dy;
+      if (x < 0 || y < 0 || x >= GRID || y >= GRID || x2 < 0 || y2 < 0 || x2 >= GRID || y2 >= GRID) continue;
+      const a = A[y * GRID + x], b = B[y2 * GRID + x2];
+      if (a === 0 && b === 0) continue;
+      c += Math.abs(Math.min(a, 55) - Math.min(b, 55)); cnt++;
+    }
+    const v = cnt ? c / Math.sqrt(cnt) : Infinity;
+    costs[dx + "," + dy] = v;
+    if (v < best) { best = v; bx = dx; by = dy; }
+  }
+  const sub = (m, z, p) => { const d = m - 2 * z + p; return isFinite(d) && d > 0 ? clamp((0.5 * (m - p)) / d, -0.5, 0.5) : 0; };
+  const z0 = costs[bx + "," + by];
+  return {
+    dx: bx + sub(costs[bx - 1 + "," + by], z0, costs[bx + 1 + "," + by]),
+    dy: by + sub(costs[bx + "," + (by - 1)], z0, costs[bx + "," + (by + 1)]),
+    rainy,
+  };
+}
+
+// grids: oldest→newest Float32Array dBZ grids, times: unix seconds
+function analyzeGrids(grids, times, mo) {
+  const { gx, gy, kmPerCell } = mo;
+  const G = grids[grids.length - 1];
+  const R = Math.round(Math.min(70, 220 / kmPerCell)), maxS = 8;
+  const cxi = Math.round(gx), cyi = Math.round(gy);
+  const vs = [];
+  for (let k = 0; k < grids.length - 1; k++) {
+    const m = matchShift(grids[k], grids[k + 1], cxi, cyi, R, maxS);
+    if (m) { const dt = (times[k + 1] - times[k]) / 600 || 1; vs.push({ u: m.dx / dt, v: m.dy / dt, w: m.rainy }); }
+  }
+  let u = 0, v = 0, motionOk = false;
+  if (vs.length) {
+    const W = vs.reduce((s, a) => s + a.w, 0);
+    u = vs.reduce((s, a) => s + a.u * a.w, 0) / W;
+    v = vs.reduce((s, a) => s + a.v * a.w, 0) / W;
+    motionOk = true;
+  }
+  const sample = (x0, y0, rKm) => {
+    const rc = Math.max(1, rKm / kmPerCell);
+    let n = 0, wet = 0, rate = 0;
+    for (let y = Math.floor(y0 - rc); y <= Math.ceil(y0 + rc); y++) for (let x = Math.floor(x0 - rc); x <= Math.ceil(x0 + rc); x++) {
+      if (x < 0 || y < 0 || x >= GRID || y >= GRID) continue;
+      if ((x - x0) ** 2 + (y - y0) ** 2 > rc * rc) continue;
+      n++;
+      const d = G[y * GRID + x];
+      if (d >= 15) { wet++; rate += dbzToRate(d); }
+    }
+    return { p: n ? wet / n : 0, rate: wet ? rate / wet : 0, outside: n === 0 };
+  };
+  const steps = [];
+  for (let L = 0; L <= 120; L += 10) {
+    const k = L / 10;
+    const r = sample(gx - u * k, gy - v * k, 3 + 1.6 * k);
+    steps.push({ L, p: r.p * Math.exp(-L / 200), rate: r.rate, outside: r.outside });
+  }
+  let nd = Infinity, nx = 0, ny = 0;
+  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
+    if (G[y * GRID + x] < 20) continue;
+    const d = (x - gx) ** 2 + (y - gy) ** 2;
+    if (d < nd) { nd = d; nx = x; ny = y; }
+  }
+  let nearest = null;
+  if (isFinite(nd)) {
+    const dist = Math.sqrt(nd) * kmPerCell;
+    const bearing = ((Math.atan2(nx - gx, -(ny - gy)) * 180) / Math.PI + 360) % 360;
+    const tp = [gx - nx, gy - ny], len = Math.hypot(tp[0], tp[1]) || 1;
+    const approach = ((u * tp[0] + v * tp[1]) / len) * kmPerCell * 6;
+    nearest = { dist, bearing, approach, x: nx, y: ny };
+  }
+  return {
+    steps, motionOk, u, v, gx, gy, nearest,
+    speed: Math.hypot(u, v) * kmPerCell * 6,
+    heading: ((Math.atan2(u, -v) * 180) / Math.PI + 360) % 360,
+    time: times[times.length - 1],
+  };
+}
+function cellToLatLng(mo, x, y) {
+  const n = Math.pow(2, Z) * TILE;
+  const X = (x * DS + (mo.tx - 1) * TILE) / n, Y = (y * DS + (mo.ty - 1) * TILE) / n;
+  return [(Math.atan(Math.sinh(Math.PI * (1 - 2 * Y))) * 180) / Math.PI, X * 360 - 180];
+}
+
+/* ---------------- model forecasts ---------------- */
+const memberKeys = (h) => Object.keys(h).filter((k) => k.startsWith("precipitation") && !k.includes("probability") && Array.isArray(h[k]));
+
+async function loadModels(lat, lon, { light = false } = {}) {
+  const ll = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&timeformat=unixtime&timezone=auto&forecast_days=3`;
+  const detList = light ? FC_MODELS.slice(0, 1) : FC_MODELS;
+  const det = detList.map(async ([id, label]) => {
+    try {
+      const extra = id === "best_match" ? ",weather_code,temperature_2m,relative_humidity_2m,cape,cloud_cover" : "";
+      const j = await getJSON(`https://api.open-meteo.com/v1/forecast?${ll}&hourly=precipitation,precipitation_probability${extra}&models=${id}`);
+      const h = j.hourly; if (!h) return null;
+      const pk = memberKeys(h)[0];
+      const prob = Object.keys(h).find((k) => k.startsWith("precipitation_probability"));
+      return { id, label, time: h.time, precip: h[pk], prob: prob ? h[prob] : null, offset: j.utc_offset_seconds, extra: id === "best_match" ? h : null };
+    } catch { return null; }
+  });
+  const ens = (light ? ENS_MODELS.slice(0, 1) : ENS_MODELS).map(async (m) => {
+    for (const name of m.names) {
+      try {
+        const j = await getJSON(`https://ensemble-api.open-meteo.com/v1/ensemble?${ll}&hourly=precipitation&models=${name}`);
+        const h = j.hourly; if (!h) continue;
+        const ks = memberKeys(h).filter((k) => h[k].some((x) => x != null));
+        if (ks.length >= 5) return { label: m.label, time: h.time, members: ks.map((k) => h[k]) };
+      } catch { /* try next name */ }
+    }
+    return null;
+  });
+  const [D, E] = await Promise.all([Promise.all(det), Promise.all(ens)]);
+  const d = D.filter(Boolean), e = E.filter(Boolean);
+  return { det: d, ens: e, offset: d[0] ? d[0].offset : 0 };
+}
+
+function buildHourly(M, nowSec = Date.now() / 1000, H = 48) {
+  const start = Math.floor(nowSec / 3600) * 3600;
+  const at = (src, arr, t) => { const i = src.time.indexOf(t); return i < 0 ? null : arr[i]; };
+  const hours = [];
+  for (let k = 0; k < H; k++) {
+    const s = start + k * 3600, t = s + 3600;
+    let ensWet = 0, ensN = 0, ensSum = 0;
+    M.ens.forEach((e) => e.members.forEach((mm) => { const v = at(e, mm, t); if (v == null) return; ensN++; ensSum += v; if (v >= WET) ensWet++; }));
+    let detWet = 0, detN = 0, bm = null;
+    M.det.forEach((d) => {
+      const v = at(d, d.precip, t); if (v != null) { detN++; if (v >= WET) detWet++; }
+      if (d.id === "best_match" && d.prob) { const p = at(d, d.prob, s) ?? at(d, d.prob, t); if (p != null) bm = p / 100; }
+    });
+    const parts = [];
+    if (ensN) parts.push([ensWet / ensN, 0.5]);
+    if (bm != null) parts.push([bm, 0.3]);
+    if (detN) parts.push([detWet / detN, 0.2]);
+    const W = parts.reduce((a, b) => a + b[1], 0);
+    hours.push({
+      s, p: W ? parts.reduce((a, b) => a + b[0] * b[1], 0) / W : null,
+      pEns: ensN ? ensWet / ensN : null, pBm: bm, pDet: detN ? detWet / detN : null,
+      ensN, detN, mm: ensN ? ensSum / ensN : null,
+    });
+  }
+  return hours;
+}
+
+function windowProb(M, hours, fromS, toS) {
+  let wet = 0, n = 0;
+  M.ens.forEach((e) => e.members.forEach((mm) => {
+    let any = false, has = false;
+    for (let t = fromS + 3600; t <= toS; t += 3600) {
+      const i = e.time.indexOf(t); if (i < 0 || mm[i] == null) continue;
+      has = true; if (mm[i] >= WET) { any = true; break; }
+    }
+    if (has) { n++; if (any) wet++; }
+  }));
+  const hs = hours.filter((h) => h.s >= fromS && h.s < toS && h.p != null);
+  const hmax = hs.length ? Math.max(...hs.map((h) => h.p)) : null;
+  if (n && hmax != null) return 0.7 * (wet / n) + 0.3 * Math.max(hmax, wet / n);
+  return n ? wet / n : hmax;
+}
+
+// Combine radar nowcast + models into the numbers the app shows and alerts use.
+function blend(nowcast, M, nowSec = Date.now() / 1000) {
+  const hours = M && (M.ens.length || M.det.length) ? buildHourly(M, nowSec) : null;
+  const h0 = Math.floor(nowSec / 3600) * 3600;
+  const modelAt = (L) => {
+    if (!hours) return null;
+    const t = nowSec + L * 60;
+    const h = hours.find((x) => t >= x.s && t < x.s + 3600);
+    return h ? h.p : null;
+  };
+  const steps = [];
+  for (let L = 0; L <= 120; L += 10) {
+    const r = nowcast && nowcast.steps.find((s) => s.L === L);
+    const m = modelAt(L);
+    const radarOk = r && !r.outside;
+    const w = radarOk ? clamp(1 - L / 150, 0.2, 0.95) : 0;
+    const p = radarOk ? (m == null ? r.p : w * r.p + (1 - w) * m) : m;
+    steps.push({ L, p, radar: radarOk ? r.p : null, model: m, rate: r ? r.rate : 0 });
+  }
+  const within = (a, b) => steps.filter((s) => s.L >= a && s.L <= b && s.p != null);
+  const max = (arr) => (arr.length ? Math.max(...arr.map((s) => s.p)) : null);
+  const p1 = max(within(10, 60));
+  const pNow = steps[0].p;
+  const hasEns = M && M.ens.length;
+  const p3 = hasEns ? Math.max(windowProb(M, hours, h0, h0 + 3 * 3600) ?? 0, p1 ?? 0) : max(within(0, 120));
+  const p24 = hasEns ? Math.max(windowProb(M, hours, h0, h0 + 24 * 3600) ?? 0, p3 ?? 0) : null;
+  const firstRain = steps.find((s) => s.L > 0 && s.p != null && s.p >= 0.4);
+  let confidence = null;
+  if (hours) {
+    const hs = hours.slice(0, 3).filter((h) => h.p != null);
+    const spread = hs.length ? Math.max(...hs.map((h) => { const v = [h.pEns, h.pBm, h.pDet].filter((x) => x != null); return v.length ? Math.max(...v) - Math.min(...v) : 0; })) : 1;
+    confidence = spread < 0.25 ? "high" : spread < 0.5 ? "medium" : "low";
+  }
+  return { steps, hours, p1, pNow, p3, p24, firstRainMin: firstRain ? firstRain.L : null, confidence };
+}
+
+// Compact features for the AI analyst (kept small to save tokens).
+function featuresForAI({ place, lat, lon, nowcast, result, M, offset }) {
+  const fmt = (s) => { const d = new Date((s + offset) * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:00`; };
+  const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
+  const bm = M && M.det.find((d) => d.id === "best_match");
+  const ex = bm && bm.extra;
+  const exAt = (key, s) => { if (!ex || !ex[key]) return null; const i = ex.time.indexOf(s); return i < 0 ? null : ex[key][i]; };
+  return {
+    place, lat: r2(lat), lon: r2(lon),
+    local_time: (() => { const d = new Date((Date.now() / 1000 + offset) * 1000); return d.toISOString().slice(0, 16).replace("T", " "); })(),
+    radar: nowcast ? {
+      latest_frame_min_ago: Math.round((Date.now() / 1000 - nowcast.time) / 60),
+      raining_here_now: r2(nowcast.steps[0].p), rate_here_mmh: r2(nowcast.steps[0].rate),
+      motion: nowcast.motionOk ? { toward: dirName(nowcast.heading), kmh: Math.round(nowcast.speed) } : "unmeasurable (little rain)",
+      nearest_cell: nowcast.nearest ? { km: Math.round(nowcast.nearest.dist), direction_from_user: dirName(nowcast.nearest.bearing), approach_kmh: Math.round(nowcast.nearest.approach) } : null,
+    } : "unavailable",
+    nowcast_10min_steps: result.steps.map((s) => ({ min: s.L, blended: r2(s.p), radar: r2(s.radar), model: r2(s.model) })),
+    hourly_next_24: (result.hours || []).slice(0, 24).map((h) => ({
+      hour: fmt(h.s), p: r2(h.p), ens: r2(h.pEns), om: r2(h.pBm), det: r2(h.pDet), mm: r2(h.mm),
+      cape: exAt("cape", h.s), rh: exAt("relative_humidity_2m", h.s), cloud: exAt("cloud_cover", h.s), wcode: exAt("weather_code", h.s),
+    })),
+    algorithm: { p_next_1h: r2(result.p1), p_next_3h: r2(result.p3), p_next_24h: r2(result.p24), confidence: result.confidence },
+    ensemble_members: M ? M.ens.reduce((a, e) => a + e.members.length, 0) : 0,
+  };
+}
+
+/* ---------------- state ---------------- */
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("ff-" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("ff-" + k, JSON.stringify(v)); } catch {} },
+};
+let loc = store.get("loc", { lat: 13.7563, lon: 100.5018, name: "กรุงเทพมหานคร" });
+let settings = store.get("settings", { on: false, lead: 30, threshold: 0.4, quiet: true });
+let radar = { host: "", frames: [], layers: [], idx: 0, timer: null };
+let nowcast = null, M = null, result = null, offset = 7 * 3600, ai = null, aiFor = "";
+
+const pct = (p) => (p == null || !isFinite(p) ? "--" : Math.round(clamp(p) * 100) + "%");
+const fmtTime = (unix, day) => {
+  const d = new Date((unix + offset) * 1000);
+  const hm = String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
+  return day ? ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"][d.getUTCDay()] + " " + hm : hm;
+};
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 3200);
+}
+function setStatus(text, kind) { $("statusText").textContent = text; $("dot").className = "dot " + (kind || ""); }
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+/* ---------------- tabs ---------------- */
+function setView(v) {
+  if (v === "radar" && matchMedia("(min-width:900px)").matches) v = "home";
+  document.body.dataset.view = v;
+  document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === v)));
+  $("view-home").hidden = v === "alerts";
+  $("view-alerts").hidden = v !== "alerts";
+  if (v === "radar") setTimeout(() => map.invalidateSize(), 30);
+}
+document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => setView(b.dataset.tab)));
+matchMedia("(min-width:900px)").addEventListener?.("change", () => { setView(document.body.dataset.view); map.invalidateSize(); });
+
+/* ---------------- map ---------------- */
+$("legendBar").innerHTML = PALETTE.map((p) => `<span style="background:${p[4]}"></span>`).join("");
+const map = L.map("map", { zoomControl: true }).setView([loc.lat, loc.lon], 8);
+const dark = matchMedia("(prefers-color-scheme: dark)");
+const esri = (n) => `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${n}/MapServer/tile/{z}/{y}/{x}`;
+const bn = (d) => (d ? "World_Dark_Gray_Base" : "World_Light_Gray_Base");
+const rn = (d) => (d ? "World_Dark_Gray_Reference" : "World_Light_Gray_Reference");
+const base = L.tileLayer(esri(bn(dark.matches)), { maxZoom: 12,
+  attribution: '© <a href="https://www.esri.com/">Esri</a> · Radar <a href="https://www.rainviewer.com/">RainViewer</a> · <a href="https://open-meteo.com/">Open-Meteo</a>' }).addTo(map);
+const labels = L.tileLayer(esri(rn(dark.matches)), { maxZoom: 12, pane: "overlayPane", zIndex: 50 }).addTo(map);
+dark.addEventListener?.("change", (e) => { base.setUrl(esri(bn(e.matches))); labels.setUrl(esri(rn(e.matches))); });
+const pin = L.marker([loc.lat, loc.lon], { icon: L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 1000 }).addTo(map);
+let motionLine = null, nearestMark = null;
+map.on("click", (e) => setLocation(e.latlng.lat, e.latlng.lng, `จุดที่เลือก ${e.latlng.lat.toFixed(2)}, ${e.latlng.lng.toFixed(2)}`, false));
+$("recenter").onclick = () => map.setView([loc.lat, loc.lon], 9);
+
+function setLocation(lat, lon, name, fly = true) {
+  loc = { lat, lon, name };
+  store.set("loc", loc);
+  $("placeName").textContent = name;
+  pin.setLatLng([lat, lon]);
+  if (fly) map.setView([lat, lon], Math.max(map.getZoom(), 8));
+  ai = null;
+  refresh();
+}
+
+/* ---------------- search sheet ---------------- */
+const sheet = $("sheet");
+$("placeBtn").onclick = () => { sheet.hidden = false; renderRecent(); setTimeout(() => $("q").focus(), 50); };
+sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") sheet.hidden = true; });
+function renderRecent() {
+  const rec = store.get("recent", []);
+  $("results").innerHTML = "";
+  rec.forEach((r) => addResult(r.name, r.sub || "ล่าสุด", r.lat, r.lon));
+}
+function addResult(name, sub, lat, lon) {
+  const b = document.createElement("button"); b.type = "button";
+  b.innerHTML = `<span>${esc(name)}</span><small>${esc(sub)}</small>`;
+  b.onclick = () => {
+    sheet.hidden = true; $("q").value = "";
+    const rec = store.get("recent", []).filter((r) => r.name !== name).slice(0, 4);
+    store.set("recent", [{ name, sub, lat, lon }, ...rec]);
+    setLocation(lat, lon, name);
+  };
+  $("results").appendChild(b);
+}
+let searchT;
+$("q").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(doSearch, 350); });
+$("searchForm").addEventListener("submit", (e) => { e.preventDefault(); doSearch(); });
+async function doSearch() {
+  const q = $("q").value.trim();
+  if (q.length < 2) { renderRecent(); return; }
+  try {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=th&format=json`);
+    const j = await r.json();
+    $("results").innerHTML = "";
+    (j.results || []).forEach((x) => addResult(x.name, [x.admin2, x.admin1, x.country].filter(Boolean).join(", "), x.latitude, x.longitude));
+    if (!(j.results || []).length) $("results").innerHTML = `<p class="help">ไม่พบ “${esc(q)}” ลองพิมพ์ชื่ออำเภอหรือชื่อภาษาอังกฤษ</p>`;
+  } catch { $("results").innerHTML = `<p class="help">ค้นหาไม่สำเร็จ ตรวจการเชื่อมต่ออินเทอร์เน็ต</p>`; }
+}
+$("gpsBtn").onclick = () => {
+  if (!navigator.geolocation) { toast("เครื่องนี้ไม่รองรับการระบุตำแหน่ง"); return; }
+  $("gpsBtn").textContent = "กำลังหาตำแหน่ง…";
+  navigator.geolocation.getCurrentPosition(
+    (p) => { sheet.hidden = true; $("gpsBtn").textContent = "ใช้ตำแหน่งปัจจุบันของฉัน"; setLocation(p.coords.latitude, p.coords.longitude, "ตำแหน่งของฉัน"); reverseName(p.coords.latitude, p.coords.longitude); },
+    () => { $("gpsBtn").textContent = "ใช้ตำแหน่งปัจจุบันของฉัน"; toast("ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง ลองค้นหาชื่อเมืองแทน"); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 300000 });
+};
+async function reverseName(lat, lon) {
+  // nearest named place via Open-Meteo geocoding is not reverse; use BigDataCloud free client endpoint
+  try {
+    const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=th`);
+    const j = await r.json();
+    const n = j.locality || j.city || j.principalSubdivision;
+    if (n && loc.lat === lat) { loc.name = n; store.set("loc", loc); $("placeName").textContent = n; }
+  } catch {}
+}
+
+/* ---------------- radar playback ---------------- */
+async function loadRadar() {
+  const R = await loadRadarFrames();
+  if (!R.frames.length) throw new Error("no frames");
+  if (radar.frames.length && radar.frames.at(-1).time === R.frames.at(-1).time) return;
+  radar.layers.forEach((l) => map.removeLayer(l));
+  radar.host = R.host; radar.frames = R.frames;
+  radar.layers = R.frames.map((f) => L.tileLayer(`${R.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`, { opacity: 0, maxNativeZoom: Z, maxZoom: 12, zIndex: 10 }).addTo(map));
+  $("slider").max = R.frames.length - 1;
+  showFrame(R.frames.length - 1);
+}
+function showFrame(i) {
+  radar.idx = i;
+  radar.layers.forEach((l, k) => l.setOpacity(k === i ? 0.75 : 0));
+  $("slider").value = i;
+  const f = radar.frames[i];
+  const ago = Math.round((Date.now() / 1000 - f.time) / 60);
+  $("frameTime").textContent = `${fmtTime(f.time)} ${ago <= 1 ? "ล่าสุด" : "-" + ago + " น."}`;
+}
+$("slider").addEventListener("input", (e) => { stopPlay(); showFrame(+e.target.value); });
+const PLAY = '<path d="M4 2l10 6-10 6z"/>', PAUSE = '<path d="M3 2h4v12H3zM9 2h4v12H9z"/>';
+function stopPlay() { clearInterval(radar.timer); radar.timer = null; $("playIcon").innerHTML = PLAY; }
+$("play").onclick = () => {
+  if (radar.timer) return stopPlay();
+  $("playIcon").innerHTML = PAUSE;
+  radar.timer = setInterval(() => { const n = radar.frames.length; if (n) showFrame((radar.idx + 1) % n); }, 550);
+};
+
+/* ---------------- radar analysis in the browser ---------------- */
+function loadImg(url) {
+  return new Promise((res) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res(im); im.onerror = () => res(null); im.src = url; });
+}
+async function analyzeRadar() {
+  const fr = radar.frames; if (fr.length < 2) return null;
+  const use = fr.slice(-3), mo = mosaicFor(loc.lat, loc.lon);
+  const cv = document.createElement("canvas"); cv.width = cv.height = 3 * TILE;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  const grids = [];
+  for (const f of use) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const ims = await Promise.all(mo.tiles.map((t) => loadImg(radarTileUrl(radar.host, f.path, t.x, t.y, 0))));
+    ims.forEach((im, k) => im && ctx.drawImage(im, mo.tiles[k].ox, mo.tiles[k].oy));
+    grids.push(gridFromRGBA(ctx.getImageData(0, 0, cv.width, cv.height).data));
+  }
+  return { ...analyzeGrids(grids, use.map((f) => f.time), mo), mo };
+}
+
+/* ---------------- refresh cycle ---------------- */
+let run = 0;
+async function refresh() {
+  const my = ++run;
+  setStatus("กำลังคำนวณ…");
+  const [nc, md] = await Promise.all([
+    analyzeRadar().catch((e) => { console.warn("radar", e); return null; }),
+    loadModels(loc.lat, loc.lon).catch(() => null),
+  ]);
+  if (my !== run) return;
+  nowcast = nc; M = md;
+  if (md && md.offset != null) offset = md.offset;
+  result = blend(nowcast, M);
+  render();
+  const ok = [nc && "เรดาร์", md && (md.ens.length || md.det.length) && "โมเดล"].filter(Boolean);
+  if (ok.length === 2) setStatus(`ข้อมูลสด · อัปเดต ${new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`, "live");
+  else if (ok.length) setStatus(`ได้ข้อมูลบางส่วน (${ok.join(", ")}) · จะลองใหม่อัตโนมัติ`, "err");
+  else setStatus("โหลดข้อมูลไม่สำเร็จ ตรวจการเชื่อมต่ออินเทอร์เน็ต", "err");
+  localAlertCheck();
+  runAI(false);
+}
+async function cycle() {
+  try { await loadRadar(); } catch { setStatus("โหลดเรดาร์ไม่สำเร็จ จะลองใหม่อัตโนมัติ", "err"); }
+  await refresh();
+}
+
+/* ---------------- render ---------------- */
+function verdictOf(p) {
+  if (p == null) return "";
+  return p >= 0.7 ? "ฝนตกแน่นอน" : p >= 0.45 ? "มีโอกาสสูง" : p >= 0.2 ? "อาจมีฝน" : p >= 0.08 ? "โอกาสน้อย" : "ไม่น่ามีฝน";
+}
+function render() {
+  const R = result, nowS = Date.now() / 1000;
+  const useAI = ai && aiFor === key();
+  const p1 = useAI ? ai.p1h / 100 : R.p1;
+  $("p1").innerHTML = p1 == null ? "--<small>%</small>" : Math.round(p1 * 100) + "<small>%</small>";
+  $("verdict").textContent = verdictOf(p1);
+  $("pNow").textContent = pct(R.pNow);
+  $("p3").textContent = pct(useAI ? ai.p3h / 100 : R.p3);
+  $("p24").textContent = pct(useAI ? ai.p24h / 100 : R.p24);
+  rainFx(p1 ?? 0);
+
+  // summary sentence
+  let txt = "";
+  const hereRate = nowcast ? nowcast.steps[0].rate : 0;
+  if (useAI && ai.headline) txt = ai.headline;
+  else if (nowcast && nowcast.steps[0].p > 0.35) txt = `ตอนนี้มี${rateLabel(hereRate)}ที่ตำแหน่งนี้`;
+  else if (R.firstRainMin != null) txt = `ฝนน่าจะเริ่มในราว ${R.firstRainMin} นาที (ประมาณ ${fmtTime(nowS + R.firstRainMin * 60)})`;
+  else if (R.hours) { const nx = R.hours.find((h) => h.p >= 0.4); txt = nx ? `ช่วงที่มีโอกาสฝนถัดไป ${fmtTime(nx.s, true)} (${pct(nx.p)})` : "ไม่มีสัญญาณฝนชัดเจนใน 48 ชั่วโมงข้างหน้า"; }
+  $("summary").textContent = txt || "รอข้อมูล…";
+
+  const conf = useAI ? ai.confidence : { high: "สูง", medium: "ปานกลาง", low: "ต่ำ" }[R.confidence];
+  const confColor = conf === "สูง" ? "var(--good)" : "var(--warn)";
+  const nEns = M ? M.ens.reduce((a, e) => a + e.members.length, 0) : 0;
+  $("meta").innerHTML = (conf ? `<span>ความมั่นใจ <span class="chip" style="color:${confColor}">${esc(conf)}</span></span>` : "") +
+    `<span>${nEns} ชุด ensemble · ${M ? M.det.length : 0} โมเดล${nowcast ? " · เรดาร์" : ""}${useAI ? (ai.model === "local" ? " · ปรับโดยผู้ช่วยวิเคราะห์" : " · ปรับโดย Claude") : ""}</span>`;
+
+  // 2-hour strip
+  $("strip").innerHTML = R.steps.map((s) => {
+    const p = s.p == null ? 0 : clamp(s.p);
+    return `<div class="c" title="${fmtTime(nowS + s.L * 60)} · ${pct(s.p)}"><i style="height:${Math.max(3, p * 100)}%;opacity:${0.3 + 0.7 * p}"></i></div>`;
+  }).join("");
+  $("ticks").innerHTML = R.steps.map((s) => `<span>${s.L % 30 === 0 ? (s.L === 0 ? "ตอนนี้" : fmtTime(nowS + s.L * 60)) : ""}</span>`).join("");
+
+  // radar facts + map overlays
+  motionLine && map.removeLayer(motionLine); nearestMark && map.removeLayer(nearestMark);
+  if (nowcast) {
+    const n = nowcast.nearest;
+    $("nearest").textContent = n ? (n.dist < 3 ? "อยู่เหนือคุณ" : `${Math.round(n.dist)} กม. ทาง${dirName(n.bearing)}`) : "ไม่พบในรัศมี ~400 กม.";
+    $("motion").textContent = nowcast.motionOk && nowcast.speed > 3 ? `${dirName(nowcast.heading)} ${Math.round(nowcast.speed)} กม./ชม.` : nowcast.motionOk ? "เกือบนิ่ง" : "ฝนน้อยเกินกว่าจะวัด";
+    if (n && n.dist >= 3 && n.approach > 3) { const m = (n.dist / n.approach) * 60; $("eta").textContent = m <= 180 ? `~${Math.round(m)} นาที (${fmtTime(nowS + m * 60)})` : "เกิน 3 ชม."; }
+    else $("eta").textContent = n && n.dist < 3 ? "ถึงแล้ว" : "ไม่ได้เคลื่อนเข้าหา";
+    $("here").textContent = hereRate > 0 ? `${rateLabel(hereRate)} ~${hereRate.toFixed(1)} มม./ชม.` : "ไม่มีฝน";
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0b77a3";
+    if (nowcast.motionOk && nowcast.speed > 3) {
+      motionLine = L.polyline([cellToLatLng(nowcast.mo, nowcast.gx - nowcast.u * 6, nowcast.gy - nowcast.v * 6), [loc.lat, loc.lon]], { color: accent, weight: 3, dashArray: "6 6" }).addTo(map).bindTooltip("เส้นทางที่ฝนจะเคลื่อนมาถึงคุณใน 1 ชม.");
+    }
+    if (n && n.dist >= 3) nearestMark = L.circleMarker(cellToLatLng(nowcast.mo, n.x + 0.5, n.y + 0.5), { radius: 7, color: "#ff7c00", weight: 2, fillOpacity: 0.2 }).addTo(map).bindTooltip("กลุ่มฝนใกล้สุด");
+  } else {
+    ["nearest", "motion", "eta", "here"].forEach((id) => ($(id).textContent = "–"));
+  }
+
+  if (R.hours) renderChart(R.hours.slice(0, 30));
+  renderSources();
+  renderAI();
+}
+
+function renderChart(hs) {
+  const W = 640, H = 170, pl = 30, pr = 34, pt = 10, pb = 34, bw = (W - pl - pr) / hs.length;
+  const maxMm = Math.max(2, ...hs.map((h) => h.mm || 0));
+  const y = (p) => pt + (1 - p) * (H - pt - pb);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="โอกาสฝนรายชั่วโมง">`;
+  [0, 0.25, 0.5, 0.75, 1].forEach((g) => { s += `<line x1="${pl}" x2="${W - pr}" y1="${y(g)}" y2="${y(g)}" stroke="var(--line)"/><text x="${pl - 5}" y="${y(g) + 3}" text-anchor="end">${g * 100}</text>`; });
+  s += `<text x="${W - pr + 4}" y="${pt + 8}">${maxMm.toFixed(0)} มม.</text><text x="${W - pr + 4}" y="${H - pb}">0</text>`;
+  hs.forEach((h, i) => {
+    const x = pl + i * bw, p = h.p ?? 0;
+    s += `<rect x="${x + 1}" y="${y(p)}" width="${Math.max(1, bw - 2)}" height="${H - pb - y(p)}" rx="2" fill="var(--accent)" fill-opacity="${0.28 + 0.72 * p}"><title>${fmtTime(h.s, true)} · ${pct(h.p)} · ${(h.mm ?? 0).toFixed(1)} มม.</title></rect>`;
+    if (h.mm != null && h.mm > 0.05) s += `<circle cx="${x + bw / 2}" cy="${pt + (1 - h.mm / maxMm) * (H - pt - pb)}" r="2.8" fill="var(--warn)"/>`;
+    const d = new Date((h.s + offset) * 1000), hr = d.getUTCHours();
+    if (hr % 3 === 0) s += `<text x="${x + bw / 2}" y="${H - pb + 13}" text-anchor="middle">${String(hr).padStart(2, "0")}</text>`;
+    if (hr === 0 && i > 0) s += `<line x1="${x}" x2="${x}" y1="${pt}" y2="${H - pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${x + 3}" y="${H - 6}">${["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"][d.getUTCDay()]}</text>`;
+  });
+  $("chart").innerHTML = s + "</svg>";
+}
+function renderSources() {
+  const rows = [];
+  const h = result.hours && result.hours[0];
+  rows.push(`<tr><td>เรดาร์ RainViewer (+10 นาที)</td><td>${nowcast ? pct(nowcast.steps[1].p) : "–"}</td></tr>`);
+  if (M) {
+    M.ens.forEach((e) => {
+      let wet = 0, n = 0; const t = h ? h.s + 3600 : 0;
+      e.members.forEach((m) => { const i = e.time.indexOf(t); if (i >= 0 && m[i] != null) { n++; if (m[i] >= 0.2) wet++; } });
+      rows.push(`<tr><td>${e.label} · ${e.members.length} สมาชิก</td><td>${n ? Math.round((wet / n) * 100) + "%" : "–"}</td></tr>`);
+    });
+    M.det.forEach((d) => {
+      const i = h ? d.time.indexOf(h.s + 3600) : -1, v = i >= 0 ? d.precip[i] : null;
+      rows.push(`<tr><td>${d.label}</td><td>${v == null ? "–" : v.toFixed(1) + " มม."}</td></tr>`);
+    });
+  }
+  $("sources").innerHTML = rows.join("") + `<tr><td colspan="2" class="note">ค่าของชั่วโมงนี้</td></tr>`;
+}
+
+/* ---------------- rain effect on the hero ---------------- */
+const fx = { drops: [], p: 0, raf: 0 };
+function rainFx(p) {
+  fx.p = p;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!fx.raf) fx.raf = requestAnimationFrame(tick);
+}
+function tick() {
+  const cv = $("rainfx"), r = cv.getBoundingClientRect();
+  if (cv.width !== Math.round(r.width) || cv.height !== Math.round(r.height)) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const target = Math.round(fx.p * 90);
+  while (fx.drops.length < target) fx.drops.push({ x: Math.random() * cv.width, y: Math.random() * -cv.height, v: 3 + Math.random() * 4, l: 8 + Math.random() * 10 });
+  if (fx.drops.length > target) fx.drops.length = target;
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  ctx.globalAlpha = 0.35; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (const d of fx.drops) {
+    d.y += d.v; d.x -= d.v * 0.15;
+    if (d.y > cv.height) { d.y = -d.l; d.x = Math.random() * cv.width * 1.1; }
+    ctx.moveTo(d.x, d.y); ctx.lineTo(d.x + d.l * 0.15, d.y - d.l);
+  }
+  ctx.stroke();
+  fx.raf = target > 0 && !document.hidden ? requestAnimationFrame(tick) : 0;
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) rainFx(fx.p); });
+
+
+/* ---------------- AI analyst ---------------- */
+// Runs entirely in the browser. If the viewer adds their own Claude API key in settings,
+// Claude reviews the same features; otherwise the built-in analyst below is used.
+const key = () => `${loc.lat.toFixed(2)},${loc.lon.toFixed(2)}`;
+let aiBusy = false, aiErr = null, aiLast = 0;
+let claudeKey = store.get("claudeKey", "");
+let claudeModel = store.get("claudeModel", "claude-opus-5-5");
+
+function localAnalyst() {
+  const R = result, nowS = Date.now() / 1000;
+  const hr = (s) => new Date((s + offset) * 1000).getUTCHours();
+  const hNow = hr(nowS);
+  const bm = M && M.det.find((d) => d.id === "best_match");
+  const ex = bm && bm.extra;
+  const exAt = (k, s) => { if (!ex || !ex[k]) return null; const i = ex.time.indexOf(s); return i < 0 ? null : ex[k][i]; };
+  const hours = R.hours || [];
+  const next = (n) => hours.slice(0, n);
+  const capeMax = Math.max(0, ...next(6).map((h) => exAt("cape", h.s) ?? 0));
+  const rhMax = Math.max(0, ...next(6).map((h) => exAt("relative_humidity_2m", h.s) ?? 0));
+  const n = nowcast && nowcast.nearest;
+  const raining = (R.pNow ?? 0) >= 0.35;
+  const etaMin = n && n.dist >= 3 && n.approach > 3 ? (n.dist / n.approach) * 60 : null;
+
+  let p1 = R.p1 ?? 0, p3 = R.p3 ?? p1, p24 = R.p24 ?? p3;
+  const why = [];
+  // radar evidence
+  if (raining) { p1 = Math.max(p1, 0.8); why.push(`เรดาร์พบฝนอยู่เหนือตำแหน่งนี้ตอนนี้`); }
+  else if (etaMin != null && etaMin <= 75) {
+    const boost = clamp(0.75 - etaMin / 150, 0.2, 0.7);
+    p1 = Math.max(p1, Math.min((R.p1 ?? 0) + 0.2, boost));
+    why.push(`กลุ่มฝนห่าง ${Math.round(n.dist)} กม. ทาง${dirName(n.bearing)} กำลังเคลื่อนเข้าหาด้วยความเร็วราว ${Math.round(n.approach)} กม./ชม.`);
+  } else if (n && n.dist < 60) why.push(`มีกลุ่มฝนห่าง ${Math.round(n.dist)} กม. ทาง${dirName(n.bearing)} แต่ยังไม่ได้เคลื่อนเข้าหา`);
+  else if (nowcast) why.push(`เรดาร์ไม่พบกลุ่มฝนในรัศมีใกล้เคียง`);
+  // instability: tropical afternoon convection the radar cannot see yet
+  const afternoon = hNow >= 11 && hNow <= 19;
+  if (capeMax >= 1500 && rhMax >= 70) {
+    const bump = afternoon ? 0.12 : 0.06;
+    p3 = Math.min(p3 + bump, (R.p3 ?? 0) + 0.2);
+    why.push(`บรรยากาศไม่เสถียรสูง (CAPE ~${Math.round(capeMax)} J/kg) เอื้อให้พายุฝนฟ้าคะนองก่อตัวใหม่${afternoon ? "ในช่วงบ่ายถึงค่ำ" : ""}`);
+  } else if (capeMax > 0 && capeMax < 300 && !raining) {
+    p3 = Math.max(0, p3 - 0.05);
+    why.push(`บรรยากาศค่อนข้างเสถียร (CAPE ต่ำ) โอกาสเกิดฝนฟ้าคะนองใหม่น้อย`);
+  }
+  // ensemble agreement
+  const h3 = next(3).filter((h) => h.pEns != null);
+  if (h3.length) {
+    const e = Math.max(...h3.map((h) => h.pEns));
+    const nEns = M.ens.reduce((a, x) => a + x.members.length, 0);
+    why.push(`ชุดพยากรณ์ ${nEns} ชุด เห็นว่ามีฝนใน 3 ชม.ข้างหน้าสูงสุด ${Math.round(e * 100)}%`);
+  }
+  p3 = Math.max(p3, p1); p24 = Math.max(p24, p3);
+
+  // confidence from agreement between sources + radar support
+  let conf = { high: "สูง", medium: "ปานกลาง", low: "ต่ำ" }[R.confidence] || "ปานกลาง";
+  if (raining || (etaMin != null && etaMin <= 45 && nowcast.motionOk)) conf = "สูง";
+
+  // headline
+  let headline;
+  const stop = raining ? R.steps.find((s) => s.L > 0 && s.p != null && s.p < 0.2) : null;
+  if (raining) headline = `ฝนกำลังตก (${rateLabel(nowcast.steps[0].rate)})${stop ? ` น่าจะเบาลงราว ${fmtTime(nowS + stop.L * 60)}` : " และอาจตกต่อเนื่องอีกพักใหญ่"}`;
+  else if (etaMin != null && etaMin <= 90 && p1 >= 0.3) headline = `กลุ่มฝนกำลังเข้ามา คาดถึงราว ${fmtTime(nowS + etaMin * 60)}`;
+  else if (p3 >= 0.5) {
+    const nx = hours.find((h) => h.p >= 0.4);
+    const when = nx ? ` ราว ${fmtTime(Math.max(nx.s, nowS))}` : "";
+    headline = p1 < 0.3 ? `ชั่วโมงนี้ยังไม่มีฝน แต่${afternoon && capeMax >= 1000 ? "พายุฝนฟ้าคะนองอาจก่อตัว" : "ฝนอาจเริ่ม"}${when}` : `มีโอกาสฝนตกในอีก 1–3 ชั่วโมง${when}`;
+  }
+  else if (p24 >= 0.5) { const nx = hours.find((h) => h.p >= 0.4); headline = nx ? `ตอนนี้ยังไม่มีฝน แต่เฝ้าระวังช่วง ${fmtTime(nx.s, true)}` : "ตอนนี้ยังไม่มีฝน แต่วันนี้ยังมีโอกาส"; }
+  else headline = "ฟ้าค่อนข้างเปิด ไม่น่ามีฝนในช่วงนี้";
+
+  // advice: best dry window in next 12 h
+  const h12 = next(12);
+  let best = null, cur = null;
+  h12.forEach((h) => { if (h.p != null && h.p < 0.2) { cur = cur ? { a: cur.a, b: h.s + 3600 } : { a: h.s, b: h.s + 3600 }; if (!best || cur.b - cur.a > best.b - best.a) best = { ...cur }; } else cur = null; });
+  let advice;
+  if (p1 >= 0.5) advice = "พกร่มหรือเสื้อกันฝนติดตัว ถ้าต้องเดินทางให้เผื่อเวลารถติด";
+  else if (p3 >= 0.4) advice = "ควรพกร่มติดตัวไว้ก่อน";
+  else advice = "ออกไปทำธุระได้ตามปกติ";
+  const firstWet = hours.find((h) => h.p != null && h.p >= 0.4);
+  if (!raining && p1 < 0.4 && firstWet && firstWet.s - nowS < 12 * 3600 && firstWet.s > nowS) advice += ` ถ้าจะออกไปข้างนอก ควรกลับถึงที่พักก่อนราว ${fmtTime(firstWet.s)}`;
+  else if (best && best.b - best.a >= 2 * 3600 && best.a - nowS < 4 * 3600 && p3 >= 0.3) advice += ` ช่วงที่ฟ้าน่าจะเปิดคือ ${fmtTime(Math.max(best.a, nowS))}–${fmtTime(best.b)}`;
+
+  // timeline: group the next 12 h into periods
+  const cat = (p) => (p == null ? -1 : p >= 0.5 ? 2 : p >= 0.2 ? 1 : 0);
+  const txt = ["ฟ้าค่อนข้างเปิด", "อาจมีฝนบางพื้นที่", "มีโอกาสฝนสูง"];
+  const tl = [];
+  h12.forEach((h) => {
+    const c = cat(h.p);
+    const last = tl[tl.length - 1];
+    if (last && last.c === c) { last.pmax = Math.max(last.pmax, h.p ?? 0); last.mm += h.mm ?? 0; return; }
+    tl.push({ s: h.s, c, pmax: h.p ?? 0, mm: h.mm ?? 0 });
+  });
+  const timeline = tl.filter((t) => t.c >= 0).slice(0, 4).map((t) => ({
+    time: fmtTime(t.s),
+    text: `${txt[t.c]} (สูงสุด ${Math.round(t.pmax * 100)}%${t.mm >= 0.5 ? `, รวม ~${t.mm.toFixed(1)} มม.` : ""})`,
+  }));
+
+  return {
+    p1h: Math.round(clamp(p1) * 100), p3h: Math.round(clamp(p3) * 100), p24h: Math.round(clamp(p24) * 100),
+    confidence: conf, headline, detail: why.slice(0, 3).join(" · ") || "ข้อมูลยังไม่พอสำหรับการวิเคราะห์ละเอียด",
+    advice, timeline, model: "local", at: Date.now(),
+  };
+}
+
+const SYSTEM = `คุณคือนักอุตุนิยมวิทยาผู้เชี่ยวชาญการพยากรณ์ฝนระยะสั้นในเขตร้อนเอเชียตะวันออกเฉียงใต้
+ข้อมูลที่ได้รับ: เรดาร์ (การเคลื่อนตัวของกลุ่มฝน), ensemble ECMWF/GEFS/ICON, ความน่าจะเป็นจาก Open-Meteo, CAPE/ความชื้น/เมฆ
+หลักการ: ใช้ตัวเลขอัลกอริทึมเป็นฐาน ปรับได้เมื่อมีหลักฐานชัด ห้ามต่างจากอัลกอริทึมเกิน 20 จุด เว้นแต่เรดาร์ยืนยัน คำนึงถึงเวลาในวันและฤดูกาล ถ้าข้อมูลขัดแย้งให้บอกตรงๆ และลดความมั่นใจ ภาษาไทยเป็นกันเอง สั้น ไม่ใช้อีโมจิ
+ตอบเป็น JSON เท่านั้น: {"p1h":0-100,"p3h":0-100,"p24h":0-100,"confidence":"สูง|ปานกลาง|ต่ำ","headline":"≤60 ตัวอักษร","detail":"2-3 ประโยค","advice":"1 ประโยค","timeline":[{"time":"HH:MM","text":"..."}]} timeline 2-4 รายการ ครอบคลุม 12 ชม.`;
+
+async function claudeAnalyst() {
+  const features = featuresForAI({ place: loc.name, lat: loc.lat, lon: loc.lon, nowcast, result, M, offset });
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": claudeKey, "anthropic-version": "2023-06-01", "content-type": "application/json",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({ model: claudeModel, max_tokens: 900, system: SYSTEM,
+      messages: [{ role: "user", content: `ข้อมูลล่าสุด (JSON):\n${JSON.stringify(features)}\n\nวิเคราะห์และตอบเป็น JSON` }] }),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(r.status === 401 ? "bad_key" : (j.error && j.error.message) || "ai_failed");
+  const text = (j.content || []).filter((c) => c.type === "text").map((c) => c.text).join("").replace(/```(?:json)?/g, "");
+  const out = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+  const P = (x) => Math.max(0, Math.min(100, Math.round(Number(x) || 0)));
+  return {
+    p1h: P(out.p1h), p3h: P(out.p3h), p24h: P(out.p24h), confidence: String(out.confidence || "ปานกลาง"),
+    headline: String(out.headline || ""), detail: String(out.detail || ""), advice: String(out.advice || ""),
+    timeline: Array.isArray(out.timeline) ? out.timeline.slice(0, 4).map((t) => ({ time: String(t.time || ""), text: String(t.text || "") })) : [],
+    model: claudeModel, at: Date.now(),
+  };
+}
+
+async function runAI(force) {
+  if (!result || aiBusy) return;
+  // the local analyst is instant: always refresh it; Claude only every ~9 min per place
+  if (!claudeKey) { ai = localAnalyst(); aiFor = key(); aiErr = null; render(); return; }
+  if (!force && ai && ai.model !== "local" && aiFor === key() && Date.now() - aiLast < 9 * 60 * 1000) return;
+  ai = localAnalyst(); aiFor = key(); // show something immediately
+  aiBusy = true; aiErr = null; render();
+  try { ai = await claudeAnalyst(); aiFor = key(); aiLast = Date.now(); }
+  catch (e) { aiErr = e.message === "bad_key" ? "คีย์ Claude ไม่ถูกต้อง ตรวจในแท็บตั้งค่า (ตอนนี้ใช้ผู้ช่วยในเครื่องแทน)" : "Claude วิเคราะห์ไม่สำเร็จ ตอนนี้ใช้ผู้ช่วยในเครื่องแทน"; }
+  aiBusy = false; render();
+}
+function renderAI() {
+  const body = $("aiBody");
+  $("aiSource").textContent = ai && ai.model !== "local" ? "Claude" : "ผู้ช่วยในเครื่อง";
+  if (!ai || aiFor !== key()) { body.innerHTML = `<div class="skeleton" style="width:70%"></div><div class="skeleton"></div>`; return; }
+  body.innerHTML = `<h3>${esc(ai.headline)}</h3><p>${esc(ai.detail)}</p>${ai.advice ? `<p class="advice">${esc(ai.advice)}</p>` : ""}` +
+    (ai.timeline && ai.timeline.length ? `<ul class="timeline">${ai.timeline.map((t) => `<li><time>${esc(t.time)}</time><span>${esc(t.text)}</span></li>`).join("")}</ul>` : "") +
+    `<p class="note">${aiErr ? esc(aiErr) + " · " : ""}วิเคราะห์เมื่อ ${new Date(ai.at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}${aiBusy ? " · Claude กำลังวิเคราะห์…" : ""}</p>`;
+}
+$("aiRefresh").onclick = () => runAI(true);
+
+// Claude key settings (stored only in this browser)
+function renderKey() {
+  $("keyState").textContent = claudeKey ? `เชื่อมต่อแล้ว · ${claudeModel}` : "ยังไม่ได้ใส่คีย์ · ใช้ผู้ช่วยวิเคราะห์ในเครื่อง (ฟรี)";
+  $("keyRemove").hidden = !claudeKey;
+  $("modelSel").value = claudeModel;
+}
+$("keyForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("keyInput").value.trim();
+  if (!/^sk-ant-/.test(v)) { toast("คีย์ควรขึ้นต้นด้วย sk-ant-"); return; }
+  claudeKey = v; store.set("claudeKey", v); $("keyInput").value = "";
+  renderKey(); toast("บันทึกคีย์แล้ว กำลังให้ Claude วิเคราะห์"); runAI(true);
+});
+$("keyRemove").onclick = () => { claudeKey = ""; store.set("claudeKey", ""); renderKey(); runAI(true); toast("ลบคีย์แล้ว"); };
+$("modelSel").onchange = (e) => { claudeModel = e.target.value; store.set("claudeModel", claudeModel); renderKey(); if (claudeKey) runAI(true); };
+
+/* ---------------- alerts (while this page is open) ---------------- */
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const canNotify = () => "Notification" in window && Notification.permission === "granted";
+function saveSettings() { store.set("settings", settings); renderAlerts(); }
+function renderAlerts() {
+  $("alertOn").checked = settings.on;
+  $("quietOn").checked = settings.quiet;
+  $("soundOn").checked = settings.sound !== false;
+  document.querySelectorAll("#leadSeg button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === settings.lead)));
+  document.querySelectorAll("#sensSeg button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === settings.threshold)));
+  $("testBtn").disabled = !settings.on;
+  let mode;
+  if (!settings.on) mode = "เปิดสวิตช์ด้านบนเพื่อเริ่มรับการแจ้งเตือน";
+  else if (canNotify()) mode = `<b>เปิดอยู่</b> · ตรวจเรดาร์ทุก 5 นาที และแจ้งเตือนของระบบเมื่อฝนกำลังมาถึง ${esc(loc.name)} เปิดหน้านี้ทิ้งไว้ในแท็บหรือหน้าต่างที่ย่อไว้ได้ แต่ถ้าปิดหน้านี้ จะไม่ได้รับการแจ้งเตือน`;
+  else mode = `<b>เปิดอยู่ (แบบในหน้าเว็บ)</b> · เบราว์เซอร์นี้ไม่ให้ส่งการแจ้งเตือนของระบบ แอปจะแสดงแถบเตือน${settings.sound !== false ? " พร้อมเสียง" : ""}บนหน้านี้แทน ต้องเปิดหน้านี้ค้างไว้`;
+  $("pushMode").innerHTML = mode;
+  $("iosHint").hidden = !isIOS;
+}
+$("alertOn").addEventListener("change", async (e) => {
+  if (e.target.checked) {
+    if ("Notification" in window && Notification.permission === "default") { try { await Notification.requestPermission(); } catch {} }
+    settings.on = true; saveSettings(); unlockAudio();
+    toast(canNotify() ? "เปิดการแจ้งเตือนแล้ว" : "เปิดการแจ้งเตือนแบบในหน้าเว็บแล้ว");
+    localAlertCheck();
+  } else { settings.on = false; saveSettings(); toast("ปิดการแจ้งเตือนแล้ว"); }
+});
+$("quietOn").addEventListener("change", (e) => { settings.quiet = e.target.checked; saveSettings(); });
+$("soundOn").addEventListener("change", (e) => { settings.sound = e.target.checked; saveSettings(); if (e.target.checked) unlockAudio(); });
+document.querySelectorAll("#leadSeg button").forEach((b) => (b.onclick = () => { settings.lead = +b.dataset.v; saveSettings(); }));
+document.querySelectorAll("#sensSeg button").forEach((b) => (b.onclick = () => { settings.threshold = +b.dataset.v; saveSettings(); }));
+$("testBtn").onclick = () => { unlockAudio(); alertUser("ฟ้าฝน พร้อมแจ้งเตือนแล้ว", `จะเตือนก่อนฝนตกที่ ${loc.name} ล่วงหน้าราว ${settings.lead} นาที`); };
+
+let audioCtx = null;
+function unlockAudio() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch {} }
+function chime() {
+  if (!audioCtx || settings.sound === false) return;
+  const t = audioCtx.currentTime;
+  [880, 660, 990].forEach((f, i) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = f; o.type = "sine";
+    g.gain.setValueAtTime(0, t + i * 0.18); g.gain.linearRampToValueAtTime(0.18, t + i * 0.18 + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.18 + 0.4);
+    o.connect(g).connect(audioCtx.destination); o.start(t + i * 0.18); o.stop(t + i * 0.18 + 0.45);
+  });
+}
+function alertUser(title, body) {
+  $("bannerTitle").textContent = title; $("bannerBody").textContent = body; $("banner").hidden = false;
+  chime();
+  try { navigator.vibrate && navigator.vibrate([150, 80, 150]); } catch {}
+  if (canNotify()) {
+    try {
+      const n = new Notification(title, { body, tag: "fonfah-rain", icon: ICON, renotify: true });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch { /* some mobile browsers only allow notifications from installed apps */ }
+  }
+}
+$("bannerClose").onclick = () => ($("banner").hidden = true);
+function localAlertCheck() {
+  if (!settings.on || !result) return;
+  if (Date.now() - store.get("lastAlert", 0) < 2 * 3600 * 1000) return;
+  const hrNow = new Date((Date.now() / 1000 + offset) * 1000).getUTCHours();
+  if (settings.quiet && (hrNow >= 22 || hrNow < 6)) return;
+  if ((result.pNow ?? 0) >= 0.35) return;
+  const hit = result.steps.find((s) => s.L > 0 && s.L <= settings.lead && s.p != null && s.p >= settings.threshold);
+  if (!hit) return;
+  store.set("lastAlert", Date.now());
+  const near = nowcast && nowcast.nearest;
+  const extra = near && near.dist > 3 ? ` · กลุ่มฝนอยู่ทาง${dirName(near.bearing)} ${Math.round(near.dist)} กม.` : "";
+  alertUser(hit.L <= 10 ? "ฝนใกล้ตกแล้ว" : `ฝนน่าจะตกในอีก ~${hit.L} นาที`, `${loc.name} · โอกาส ${pct(hit.p)}${extra}`);
+}
+
+/* ---------------- boot ---------------- */
+async function boot() {
+  $("placeName").textContent = loc.name;
+  renderAlerts(); renderKey();
+  await cycle();
+  setInterval(cycle, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && Date.now() - (boot.last || 0) > 4 * 60 * 1000) { boot.last = Date.now(); cycle(); }
+  });
+  boot.last = Date.now();
+}
+boot();
+
+</script>
+</body>
+</html>
